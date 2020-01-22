@@ -1,1 +1,92 @@
 
+####Setup####
+  #library(needs)
+  needs('tidyverse')
+  needs('knitr')
+  needs(devtools)
+  needs(ggrepel)
+  needs(lubridate)
+  devtools::install_github('charlie86/spotifyr')
+  library(spotifyr)
+  #Access tokens# Get this from your own spotify API
+  Sys.setenv(SPOTIFY_CLIENT_ID = '')
+  Sys.setenv(SPOTIFY_CLIENT_SECRET = '')
+
+  access_token <- get_spotify_access_token()
+  spotifyr::get_spotify_authorization_code()
+
+  
+  
+####Build Dataframe for recently played tracks####
+    #Get recent tracks
+    temp<-get_my_recently_played(limit = 50)%>%
+          mutate(artist.name = map_chr(track.artists, function(x) x$name[1]),
+          played_at = as_datetime(played_at, tz="Europe/Berlin")) %>%
+          mutate(playlist=str_remove(`context.href`, "https://api.spotify.com/v1/playlists/"))%>%
+          select(played_at,track.id,artist.name,track.name, playlist)
+    
+    
+    #Get Audiofeatures for recent tracks and remove overlap 
+    audiofeat <- get_track_audio_features(temp$track.id)%>%
+      distinct() %>%
+      select(-uri,-track_href,-analysis_url,-duration_ms, -time_signature,-type)%>%
+      rename(track.id=id)
+  
+    #Merge audiofeatures with recently played tracks
+    temp1<-audiofeat %>%
+      left_join(temp)%>%
+      arrange(played_at)
+    
+    #Get context information (just name of the playlist) - needs to be done for each unique playlist Titel
+    
+    playlist_id_vec<-as.data.frame(unique(temp1$playlist))%>%
+      rename(playlist="unique(temp1$playlist)")
+    
+    #get playlist information 
+    playlist_info<-playlist_id_vec %>%
+      rowwise() %>% 
+      mutate(playlist_name=unlist(get_playlist(playlist_id = playlist)['name']),
+             playlist_owner=(unlist(get_playlist(playlist_id = playlist)['owner']))[1])
+               
+    #Merge Playlist Information with main dataset
+    recent_song_data<-temp1 %>%
+      left_join(playlist_info)
+      
+    
+  
+####Plot things over time####
+    ####*valence####
+    recent_song_data %>%
+      ggplot(., aes(x=played_at, y=valence))+
+      geom_point(aes(color=playlist_name))+
+      geom_smooth()+
+      theme_bw()+
+      xlab("Time Played")+
+      ylab("valence")+
+      theme(legend.position="bottom")+
+      guides(color=guide_legend(title="Playlist Title"))
+
+    
+    ####*tempo####
+    recent_song_data %>%
+      ggplot(., aes(x=played_at, y=tempo))+
+      geom_point(aes(color=playlist_name))+
+      geom_smooth()+
+      theme_bw()+
+      xlab("Time Played")+
+      ylab("tempo")+
+      theme(legend.position="bottom")+
+      guides(color=guide_legend(title="Playlist Title"))
+
+    
+  
+    ####*energy####
+    recent_song_data %>%
+      ggplot(., aes(x=played_at, y=energy))+
+      geom_point(aes(color=playlist_name))+
+      geom_smooth()+
+      theme_bw()+
+      xlab("Time Played")+
+      ylab("Energy")+
+      theme(legend.position="bottom")+
+      guides(color=guide_legend(title="Playlist Title"))
